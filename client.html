@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>3D Shooter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="ui">
+  <div id="health">Health: 100</div>
+  <div id="gun">Rifle (Auto)</div>
+  <div id="crosshair">+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Light (morning sun feel)
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(50, 100, 50);
+scene.add(light);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(1000, 1000),
+  new THREE.MeshStandardMaterial({ color: 0x556655 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// Player
+const player = {
+  velocity: new THREE.Vector3(),
+  speed: 0.2,
+  onGround: true
+};
+
+camera.position.set(0, 2, 5);
+
+// Controls
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+// Mouse look
+let yaw = 0;
+let pitch = 0;
+
+document.body.addEventListener("click", () => {
+  document.body.requestPointerLock();
+});
+
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement === document.body) {
+    yaw -= e.movementX * 0.002;
+    pitch -= e.movementY * 0.002;
+    pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+  }
+});
+
+// Shooting
+let bullets = [];
+
+function shoot() {
+  const bullet = {
+    position: camera.position.clone(),
+    direction: new THREE.Vector3(
+      -Math.sin(yaw),
+      0,
+      -Math.cos(yaw)
+    )
+  };
+  bullets.push(bullet);
+}
+
+// Fire with E (auto)
+setInterval(() => {
+  if (keys['e']) shoot();
+}, 150);
+
+// Simple target
+const target = new THREE.Mesh(
+  new THREE.BoxGeometry(2,2,2),
+  new THREE.MeshStandardMaterial({ color: 0xff0000 })
+);
+target.position.set(0,1,-20);
+scene.add(target);
+
+// Movement loop
+function updatePlayer() {
+  let forward = new THREE.Vector3(
+    -Math.sin(yaw),
+    0,
+    -Math.cos(yaw)
+  );
+
+  let right = new THREE.Vector3(
+    -forward.z,
+    0,
+    forward.x
+  );
+
+  if (keys['w']) player.velocity.add(forward.multiplyScalar(player.speed));
+  if (keys['s']) player.velocity.add(forward.multiplyScalar(-player.speed));
+  if (keys['a']) player.velocity.add(right.multiplyScalar(-player.speed));
+  if (keys['d']) player.velocity.add(right.multiplyScalar(player.speed));
+
+  // gravity
+  if (!player.onGround) player.velocity.y -= 0.01;
+
+  camera.position.add(player.velocity);
+  player.velocity.multiplyScalar(0.9);
+
+  // jump
+  if (keys[' '] && player.onGround) {
+    player.velocity.y = 0.2;
+    player.onGround = false;
+  }
+
+  if (camera.position.y <= 2) {
+    camera.position.y = 2;
+    player.onGround = true;
+  }
+}
+
+// Update bullets
+function updateBullets() {
+  bullets.forEach(b => {
+    b.position.add(b.direction.clone().multiplyScalar(0.5));
+
+    // hit detection
+    if (b.position.distanceTo(target.position) < 2) {
+      scene.remove(target);
+    }
+  });
+}
+
+// Mouse look apply
+function updateCamera() {
+  camera.rotation.set(pitch, yaw, 0);
+}
+
+// Render loop
+function animate() {
+  requestAnimationFrame(animate);
+
+  updatePlayer();
+  updateBullets();
+  updateCamera();
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+
+</body>
+</html>

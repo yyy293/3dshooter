@@ -2,163 +2,195 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Advanced 3D Shooter</title>
+<title>War Prototype v2</title>
 <style>
 body { margin:0; overflow:hidden; background:black; }
 #ui { position:absolute; top:10px; left:10px; color:white; font-family:sans-serif; }
-#crosshair {
-  position:absolute; top:50%; left:50%;
-  width:12px; height:12px;
-  margin-left:-6px; margin-top:-6px;
-  border:2px solid white; border-radius:50%;
-}
+#crosshair { position:absolute; top:50%; left:50%; width:8px; height:8px; margin:-4px; border:2px solid white; border-radius:50%; }
+#tutorial { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); color:white; background:rgba(0,0,0,0.7); padding:10px; display:none; }
 </style>
 </head>
 <body>
 <div id="crosshair"></div>
-<div id="ui">Ammo: <span id="ammo">30</span></div>
+<div id="ui">HP: <span id="hp">100</span></div>
+<div id="tutorial"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
-let scene = new THREE.Scene();
-let camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-let renderer = new THREE.WebGLRenderer();
-renderer.setSize(innerWidth, innerHeight);
+let scene=new THREE.Scene();
+let camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,5000);
+let renderer=new THREE.WebGLRenderer();
+renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Lighting
-let light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-scene.add(light);
+scene.add(new THREE.HemisphereLight(0xffffff,0x444444,1));
 
-// Floor
-let floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(100,100),
-  new THREE.MeshStandardMaterial({color:0x222222})
-);
-floor.rotation.x = -Math.PI/2;
-scene.add(floor);
+let ground=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.MeshStandardMaterial({color:0x2e8b57}));
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
 
-camera.position.y = 1.6;
+// FPS camera
+let yaw=0,pitch=0;
+document.body.onclick=()=>document.body.requestPointerLock();
+document.onmousemove=e=>{
+ if(document.pointerLockElement===document.body){
+  yaw-=e.movementX*0.002;
+  pitch-=e.movementY*0.002;
+  pitch=Math.max(-Math.PI/2,Math.min(Math.PI/2,pitch));
+ }
+};
 
-// Physics
-let velocity = new THREE.Vector3();
-let gravity = -0.01;
-let grounded = true;
+camera.position.set(0,2,5);
+let vel=new THREE.Vector3();
+let gravity=-0.015,canJump=true;
 
-// Gun
-let ammo = 30;
-let ammoUI = document.getElementById('ammo');
+let keys={};
+onkeydown=e=>keys[e.key.toLowerCase()]=true;
+onkeyup=e=>keys[e.key.toLowerCase()]=false;
 
-// Enemies
-let enemies = [];
-function spawnEnemy() {
-  let e = new THREE.Mesh(
-    new THREE.BoxGeometry(1,1,1),
-    new THREE.MeshStandardMaterial({color:0xaa0000})
-  );
-  e.position.set((Math.random()-0.5)*30, 0.5, -Math.random()*30);
-  e.health = 3;
-  scene.add(e);
-  enemies.push(e);
-}
-for(let i=0;i<12;i++) spawnEnemy();
-
-// Blood particles
-let particles = [];
-function spawnBlood(pos) {
-  for(let i=0;i<10;i++) {
-    let p = new THREE.Mesh(
-      new THREE.SphereGeometry(0.05),
-      new THREE.MeshBasicMaterial({color:0xff0000})
-    );
-    p.position.copy(pos);
-    p.vel = new THREE.Vector3(
-      (Math.random()-0.5)*0.2,
-      Math.random()*0.2,
-      (Math.random()-0.5)*0.2
-    );
-    scene.add(p);
-    particles.push(p);
-  }
+function move(){
+ let speed=0.15;
+ let forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+ let right=new THREE.Vector3(forward.z,0,-forward.x);
+ if(keys['w']) vel.add(forward.clone().multiplyScalar(speed));
+ if(keys['s']) vel.add(forward.clone().multiplyScalar(-speed));
+ if(keys['a']) vel.add(right.clone().multiplyScalar(-speed));
+ if(keys['d']) vel.add(right.clone().multiplyScalar(speed));
+ vel.y+=gravity;
+ if(keys[' ']&&canJump){ vel.y=0.3; canJump=false; }
+ camera.position.add(vel);
+ vel.multiplyScalar(0.9);
+ if(camera.position.y<2){ camera.position.y=2; vel.y=0; canJump=true; }
+ camera.rotation.set(pitch,yaw,0);
 }
 
-// Controls
-let keys = {};
-document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+// Vehicles
+let currentVehicle=null;
+let tutorialShown=false;
+let tutorial=document.getElementById('tutorial');
 
-function move() {
-  let speed = 0.15;
-  if(keys['w']) velocity.z = -speed;
-  if(keys['s']) velocity.z = speed;
-  if(keys['a']) velocity.x = -speed;
-  if(keys['d']) velocity.x = speed;
-
-  if(!keys['w'] && !keys['s']) velocity.z = 0;
-  if(!keys['a'] && !keys['d']) velocity.x = 0;
-
-  velocity.y += gravity;
-  if(camera.position.y <= 1.6) {
-    grounded = true;
-    velocity.y = 0;
-    camera.position.y = 1.6;
-  }
-
-  camera.position.add(velocity);
+function showTutorial(text){
+ tutorial.style.display='block';
+ tutorial.innerText=text;
+ setTimeout(()=>tutorial.style.display='none',4000);
 }
 
-// Shooting
-document.addEventListener('click', () => {
-  if(ammo <= 0) return;
-  ammo--;
-  ammoUI.textContent = ammo;
+let heli=new THREE.Mesh(new THREE.BoxGeometry(4,1,4),new THREE.MeshStandardMaterial({color:0x888888}));
+heli.position.set(20,10,20);
+heli.vel=new THREE.Vector3();
+scene.add(heli);
 
-  let ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(0,0), camera);
-  let hits = ray.intersectObjects(enemies);
+let jet=new THREE.Mesh(new THREE.BoxGeometry(6,1,2),new THREE.MeshStandardMaterial({color:0xaaaaaa}));
+jet.position.set(-20,20,-20);
+jet.vel=new THREE.Vector3();
+scene.add(jet);
 
-  if(hits.length > 0) {
-    let enemy = hits[0].object;
-    enemy.health--;
-    spawnBlood(enemy.position);
-
-    if(enemy.health <= 0) {
-      scene.remove(enemy);
-      enemies = enemies.filter(e => e !== enemy);
-      spawnEnemy();
+// Enter vehicle (G)
+addEventListener('keydown',e=>{
+ if(e.key.toLowerCase()==='g'){
+  if(camera.position.distanceTo(heli.position)<5){
+    currentVehicle=heli;
+    if(!tutorialShown){
+      showTutorial('Helicopter: W/S=lift, A/D=rotate');
+      tutorialShown=true;
     }
+  } else if(camera.position.distanceTo(jet.position)<5){
+    currentVehicle=jet;
+    if(!tutorialShown){
+      showTutorial('Jet: W=throttle, A/D=turn');
+      tutorialShown=true;
+    }
+  } else {
+    currentVehicle=null;
   }
+ }
 });
 
-// Reload
-document.addEventListener('keydown', e => {
-  if(e.key.toLowerCase() === 'r') {
-    ammo = 30;
-    ammoUI.textContent = ammo;
+function updateVehicle(){
+ if(!currentVehicle) return;
+
+ if(currentVehicle===heli){
+  if(keys['w']) currentVehicle.vel.y+=0.02;
+  if(keys['s']) currentVehicle.vel.y-=0.02;
+  if(keys['a']) currentVehicle.rotation.y+=0.03;
+  if(keys['d']) currentVehicle.rotation.y-=0.03;
+ }
+
+ if(currentVehicle===jet){
+  let forward=new THREE.Vector3(0,0,-1).applyEuler(currentVehicle.rotation);
+  if(keys['w']) currentVehicle.vel.add(forward.multiplyScalar(0.1));
+  if(keys['a']) currentVehicle.rotation.y+=0.02;
+  if(keys['d']) currentVehicle.rotation.y-=0.02;
+ }
+
+ currentVehicle.vel.y+=gravity*0.3;
+ currentVehicle.position.add(currentVehicle.vel);
+ currentVehicle.vel.multiplyScalar(0.98);
+
+ camera.position.copy(currentVehicle.position.clone().add(new THREE.Vector3(0,2,5)));
+}
+
+// AI shooting
+let enemies=[];
+function spawnEnemy(){
+ let e=new THREE.Mesh(new THREE.BoxGeometry(1,2,1),new THREE.MeshStandardMaterial({color:0xff0000}));
+ e.position.set((Math.random()-0.5)*200,1,(Math.random()-0.5)*200);
+ e.hp=5;
+ e.cooldown=0;
+ scene.add(e);
+ enemies.push(e);
+}
+for(let i=0;i<10;i++) spawnEnemy();
+
+let bullets=[];
+function enemyShoot(e){
+ let dir=new THREE.Vector3().subVectors(camera.position,e.position).normalize();
+ let b=new THREE.Mesh(new THREE.SphereGeometry(0.05),new THREE.MeshBasicMaterial({color:0xff0000}));
+ b.position.copy(e.position);
+ b.vel=dir.multiplyScalar(1.5);
+ scene.add(b);
+ bullets.push(b);
+}
+
+function updateAI(){
+ enemies.forEach(e=>{
+  let dist=e.position.distanceTo(camera.position);
+  if(dist<50){
+    let dir=new THREE.Vector3().subVectors(camera.position,e.position).normalize();
+    e.position.add(dir.multiplyScalar(0.02));
+    e.lookAt(camera.position);
+
+    e.cooldown--;
+    if(e.cooldown<=0){ enemyShoot(e); e.cooldown=100; }
   }
-});
+ });
+}
 
-// Animate
-function animate() {
-  requestAnimationFrame(animate);
-  move();
+function updateBullets(){
+ bullets.forEach(b=>{
+  b.vel.y+=gravity*0.3;
+  b.position.add(b.vel);
+  if(b.position.distanceTo(camera.position)<1){
+    document.getElementById('hp').textContent -=1;
+  }
+ });
+}
 
-  // Update particles
-  particles.forEach(p => {
-    p.position.add(p.vel);
-    p.vel.y += gravity * 0.5;
-  });
-
-  renderer.render(scene, camera);
+function animate(){
+ requestAnimationFrame(animate);
+ if(!currentVehicle) move();
+ updateVehicle();
+ updateAI();
+ updateBullets();
+ renderer.render(scene,camera);
 }
 animate();
 
-// Resize
-addEventListener('resize', () => {
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+onresize=()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+};
 </script>
 </body>
 </html>

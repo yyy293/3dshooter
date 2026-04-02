@@ -1,7 +1,7 @@
-
 body {
   margin: 0;
   overflow: hidden;
+  background: black;
   font-family: Arial;
 }
 
@@ -10,6 +10,7 @@ body {
   top: 10px;
   left: 10px;
   color: white;
+  z-index: 10;
 }
 
 #crosshair {
@@ -18,4 +19,10 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: 24px;
+  color: white;
+}
+
+#lock {
+  margin-top: 5px;
+  color: yellow;
 }

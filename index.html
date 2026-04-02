@@ -1,94 +1,163 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Basic 3D Shooter</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: black; }
-    #crosshair {
-      position: absolute;
-      top: 50%; left: 50%;
-      width: 10px; height: 10px;
-      margin-left: -5px; margin-top: -5px;
-      border: 2px solid white;
-      border-radius: 50%;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Advanced 3D Shooter</title>
+<style>
+body { margin:0; overflow:hidden; background:black; }
+#ui { position:absolute; top:10px; left:10px; color:white; font-family:sans-serif; }
+#crosshair {
+  position:absolute; top:50%; left:50%;
+  width:12px; height:12px;
+  margin-left:-6px; margin-top:-6px;
+  border:2px solid white; border-radius:50%;
+}
+</style>
 </head>
 <body>
 <div id="crosshair"></div>
+<div id="ui">Ammo: <span id="ammo">30</span></div>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
 let scene = new THREE.Scene();
-let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+let camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
 let renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-let light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(5,10,7);
+let light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
 scene.add(light);
 
 // Floor
-let floorGeo = new THREE.PlaneGeometry(50,50);
-let floorMat = new THREE.MeshStandardMaterial({color: 0x222222});
-let floor = new THREE.Mesh(floorGeo, floorMat);
+let floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(100,100),
+  new THREE.MeshStandardMaterial({color:0x222222})
+);
 floor.rotation.x = -Math.PI/2;
 scene.add(floor);
 
-// Player camera
 camera.position.y = 1.6;
 
-// Enemy cubes
+// Physics
+let velocity = new THREE.Vector3();
+let gravity = -0.01;
+let grounded = true;
+
+// Gun
+let ammo = 30;
+let ammoUI = document.getElementById('ammo');
+
+// Enemies
 let enemies = [];
 function spawnEnemy() {
-  let geo = new THREE.BoxGeometry();
-  let mat = new THREE.MeshStandardMaterial({color: 0xff0000});
-  let cube = new THREE.Mesh(geo, mat);
-  cube.position.set((Math.random()-0.5)*20, 0.5, -Math.random()*20);
-  scene.add(cube);
-  enemies.push(cube);
+  let e = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({color:0xaa0000})
+  );
+  e.position.set((Math.random()-0.5)*30, 0.5, -Math.random()*30);
+  e.health = 3;
+  scene.add(e);
+  enemies.push(e);
 }
-for(let i=0;i<10;i++) spawnEnemy();
+for(let i=0;i<12;i++) spawnEnemy();
+
+// Blood particles
+let particles = [];
+function spawnBlood(pos) {
+  for(let i=0;i<10;i++) {
+    let p = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05),
+      new THREE.MeshBasicMaterial({color:0xff0000})
+    );
+    p.position.copy(pos);
+    p.vel = new THREE.Vector3(
+      (Math.random()-0.5)*0.2,
+      Math.random()*0.2,
+      (Math.random()-0.5)*0.2
+    );
+    scene.add(p);
+    particles.push(p);
+  }
+}
 
 // Controls
 let keys = {};
-document.addEventListener('keydown', e => keys[e.key] = true);
-document.addEventListener('keyup', e => keys[e.key] = false);
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
 function move() {
-  let speed = 0.1;
-  if(keys['w']) camera.position.z -= speed;
-  if(keys['s']) camera.position.z += speed;
-  if(keys['a']) camera.position.x -= speed;
-  if(keys['d']) camera.position.x += speed;
+  let speed = 0.15;
+  if(keys['w']) velocity.z = -speed;
+  if(keys['s']) velocity.z = speed;
+  if(keys['a']) velocity.x = -speed;
+  if(keys['d']) velocity.x = speed;
+
+  if(!keys['w'] && !keys['s']) velocity.z = 0;
+  if(!keys['a'] && !keys['d']) velocity.x = 0;
+
+  velocity.y += gravity;
+  if(camera.position.y <= 1.6) {
+    grounded = true;
+    velocity.y = 0;
+    camera.position.y = 1.6;
+  }
+
+  camera.position.add(velocity);
 }
 
-// Shooting (raycast)
+// Shooting
 document.addEventListener('click', () => {
-  let raycaster = new THREE.Raycaster();
-  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-  let hits = raycaster.intersectObjects(enemies);
+  if(ammo <= 0) return;
+  ammo--;
+  ammoUI.textContent = ammo;
+
+  let ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(0,0), camera);
+  let hits = ray.intersectObjects(enemies);
+
   if(hits.length > 0) {
-    scene.remove(hits[0].object);
-    enemies = enemies.filter(e => e !== hits[0].object);
+    let enemy = hits[0].object;
+    enemy.health--;
+    spawnBlood(enemy.position);
+
+    if(enemy.health <= 0) {
+      scene.remove(enemy);
+      enemies = enemies.filter(e => e !== enemy);
+      spawnEnemy();
+    }
   }
 });
 
-// Loop
+// Reload
+document.addEventListener('keydown', e => {
+  if(e.key.toLowerCase() === 'r') {
+    ammo = 30;
+    ammoUI.textContent = ammo;
+  }
+});
+
+// Animate
 function animate() {
   requestAnimationFrame(animate);
   move();
+
+  // Update particles
+  particles.forEach(p => {
+    p.position.add(p.vel);
+    p.vel.y += gravity * 0.5;
+  });
+
   renderer.render(scene, camera);
 }
 animate();
 
 // Resize
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth/window.innerHeight;
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
 });
 </script>
 </body>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Basic 3D Shooter</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    #crosshair {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 10px; height: 10px;
+      margin-left: -5px; margin-top: -5px;
+      border: 2px solid white;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+<div id="crosshair"></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script>
+let scene = new THREE.Scene();
+let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+let renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Lighting
+let light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5,10,7);
+scene.add(light);
+
+// Floor
+let floorGeo = new THREE.PlaneGeometry(50,50);
+let floorMat = new THREE.MeshStandardMaterial({color: 0x222222});
+let floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+// Player camera
+camera.position.y = 1.6;
+
+// Enemy cubes
+let enemies = [];
+function spawnEnemy() {
+  let geo = new THREE.BoxGeometry();
+  let mat = new THREE.MeshStandardMaterial({color: 0xff0000});
+  let cube = new THREE.Mesh(geo, mat);
+  cube.position.set((Math.random()-0.5)*20, 0.5, -Math.random()*20);
+  scene.add(cube);
+  enemies.push(cube);
+}
+for(let i=0;i<10;i++) spawnEnemy();
+
+// Controls
+let keys = {};
+document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+function move() {
+  let speed = 0.1;
+  if(keys['w']) camera.position.z -= speed;
+  if(keys['s']) camera.position.z += speed;
+  if(keys['a']) camera.position.x -= speed;
+  if(keys['d']) camera.position.x += speed;
+}
+
+// Shooting (raycast)
+document.addEventListener('click', () => {
+  let raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+  let hits = raycaster.intersectObjects(enemies);
+  if(hits.length > 0) {
+    scene.remove(hits[0].object);
+    enemies = enemies.filter(e => e !== hits[0].object);
+  }
+});
+
+// Loop
+function animate() {
+  requestAnimationFrame(animate);
+  move();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

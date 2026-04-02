@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>War Prototype v3</title>
+<title>War Prototype v4</title>
 <style>
 body { margin:0; overflow:hidden; background:black; }
 #ui { position:absolute; top:10px; left:10px; color:white; font-family:sans-serif; }
@@ -11,7 +11,11 @@ body { margin:0; overflow:hidden; background:black; }
 </head>
 <body>
 <div id="crosshair"></div>
-<div id="ui">HP: <span id="hp">100</span></div>
+<div id="ui">
+HP: <span id="hp">100</span><br>
+Gun: <span id="gun">Rifle</span><br>
+Mode: <span id="mode">AUTO</span>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
@@ -28,7 +32,7 @@ let ground=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.MeshStand
 ground.rotation.x=-Math.PI/2;
 scene.add(ground);
 
-// Obstacles (with collision)
+// Obstacles
 let obstacles=[];
 for(let i=0;i<20;i++){
  let o=new THREE.Mesh(new THREE.BoxGeometry(5,5,5),new THREE.MeshStandardMaterial({color:0x555555}));
@@ -87,66 +91,40 @@ function move(){
  camera.rotation.set(pitch,yaw,0);
 }
 
-// Gun (visible)
-let gun=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.2,1),new THREE.MeshStandardMaterial({color:0x222222}));
-scene.add(gun);
+// Guns
+let guns=[
+ {name:'Rifle',rate:5,damage:1,mode:'auto'},
+ {name:'Sniper',rate:20,damage:3,mode:'semi'},
+ {name:'SMG',rate:2,damage:0.7,mode:'auto'}
+];
+let currentGunIndex=0;
 
-// Bullets
-let bullets=[];
-function shoot(){
- // muzzle flash
- let flash=new THREE.Mesh(new THREE.SphereGeometry(0.1),new THREE.MeshBasicMaterial({color:0xffcc66}));
- flash.position.copy(camera.position);
- scene.add(flash);
- setTimeout(()=>scene.remove(flash),50);
- let dir=new THREE.Vector3();
- camera.getWorldDirection(dir);
- let b=new THREE.Mesh(new THREE.SphereGeometry(0.05),new THREE.MeshBasicMaterial({color:0xffff00}));
- b.position.copy(camera.position);
- // recoil
- camera.rotation.x -= 0.02;
-
- // tracer bullet effect
- b.material.color.set(0xffffaa);
- b.vel=dir.multiplyScalar(2);
- b.life=200;
- scene.add(b);
- bullets.push(b);
-}
-
-let isFiring=false;
-addEventListener('keydown',e=>{ if(e.key.toLowerCase()==='e') isFiring=true; });
-addEventListener('keyup',e=>{ if(e.key.toLowerCase()==='e') isFiring=false; });
-
-let fireCooldown=0;
-let fireMode='auto'; // auto, burst, semi
-
+// Switch gun
 addEventListener('keydown',e=>{
- if(e.key==='1') fireMode='auto';
- if(e.key==='2') fireMode='burst';
- if(e.key==='3') fireMode='semi';
+ if(e.key.toLowerCase()==='y'){
+  currentGunIndex=(currentGunIndex+1)%guns.length;
+  document.getElementById('gun').textContent=guns[currentGunIndex].name;
+ }
 });
-function handleAutoFire(){
-  if(fireMode==='auto'){
-    if(isFiring && fireCooldown<=0){ shoot(); fireCooldown=5; }
-  }
-  if(fireMode==='burst'){
-    if(isFiring && fireCooldown<=0){
-      for(let i=0;i<3;i++) setTimeout(()=>shoot(),i*80);
-      fireCooldown=20;
-    }
-  }
-  if(fireMode==='semi'){
-    if(isFiring && fireCooldown<=0){ shoot(); fireCooldown=15; }
-  }
-  fireCooldown--;
-}
-  if(isFiring && fireCooldown<=0){
-    shoot();
-    fireCooldown=5; // lower = faster fire rate
-  }
-  fireCooldown--;
-}
+
+// Toggle fire mode
+addEventListener('keydown',e=>{
+ if(e.key.toLowerCase()==='f'){
+  let g=guns[currentGunIndex];
+  g.mode = g.mode==='auto' ? 'semi' : 'auto';
+  document.getElementById('mode').textContent=g.mode.toUpperCase();
+ }
+});
+
+// Gun model (improved)
+let gun=new THREE.Group();
+let gunBody=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.2,1),new THREE.MeshStandardMaterial({color:0x222222}));
+let gunBarrel=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1),new THREE.MeshStandardMaterial({color:0x111111}));
+gunBarrel.rotation.x=Math.PI/2;
+gunBarrel.position.z=-0.8;
+gun.add(gunBody);
+gun.add(gunBarrel);
+scene.add(gun);
 
 function updateGun(){
  let offset=new THREE.Vector3(0.3,-0.3,-1);
@@ -155,27 +133,69 @@ function updateGun(){
  gun.rotation.copy(camera.rotation);
 }
 
+// Bullets
+let bullets=[];
+let isFiring=false;
+let fireCooldown=0;
+
+addEventListener('keydown',e=>{ if(e.key.toLowerCase()==='e') isFiring=true; });
+addEventListener('keyup',e=>{ if(e.key.toLowerCase()==='e') isFiring=false; });
+
+function shoot(){
+ let gunStats=guns[currentGunIndex];
+ let dir=new THREE.Vector3();
+ camera.getWorldDirection(dir);
+
+ // recoil
+ camera.rotation.x -= 0.015;
+
+ // muzzle flash
+ let flash=new THREE.Mesh(new THREE.SphereGeometry(0.08),new THREE.MeshBasicMaterial({color:0xffcc66}));
+ flash.position.copy(camera.position);
+ scene.add(flash);
+ setTimeout(()=>scene.remove(flash),50);
+
+ let b=new THREE.Mesh(new THREE.SphereGeometry(0.04),new THREE.MeshBasicMaterial({color:0xffffaa}));
+ b.position.copy(camera.position);
+ b.vel=dir.multiplyScalar(2);
+ b.life=200;
+ b.damage=gunStats.damage;
+ scene.add(b);
+ bullets.push(b);
+}
+
+function handleFire(){
+ let g=guns[currentGunIndex];
+
+ if(g.mode==='auto'){
+  if(isFiring && fireCooldown<=0){ shoot(); fireCooldown=g.rate; }
+ }
+
+ if(g.mode==='semi'){
+  if(isFiring && fireCooldown<=0){ shoot(); fireCooldown=g.rate; isFiring=false; }
+ }
+
+ fireCooldown--;
+}
+
 // Enemies
 let enemies=[];
 function spawnEnemy(){
  let e=new THREE.Mesh(new THREE.BoxGeometry(1,2,1),new THREE.MeshStandardMaterial({color:0xff0000}));
  e.position.set((Math.random()-0.5)*200,1,(Math.random()-0.5)*200);
- e.hp=5; e.cooldown=0;
+ e.hp=5;
+ e.cooldown=0;
  scene.add(e);
  enemies.push(e);
 }
-for(let i=0;i<10;i++) spawnEnemy();
+for(let i=0;i<15;i++) spawnEnemy();
 
 function enemyShoot(e){
- // enemy muzzle flash
- let flash=new THREE.Mesh(new THREE.SphereGeometry(0.1),new THREE.MeshBasicMaterial({color:0xff4444}));
- flash.position.copy(e.position);
- scene.add(flash);
- setTimeout(()=>scene.remove(flash),50);
  let dir=new THREE.Vector3().subVectors(camera.position,e.position).normalize();
- let b=new THREE.Mesh(new THREE.SphereGeometry(0.05),new THREE.MeshBasicMaterial({color:0xff0000}));
+ let b=new THREE.Mesh(new THREE.SphereGeometry(0.05),new THREE.MeshBasicMaterial({color:0xff4444}));
  b.position.copy(e.position);
  b.vel=dir.multiplyScalar(1.5);
+ b.life=200;
  scene.add(b);
  bullets.push(b);
 }
@@ -184,14 +204,13 @@ function updateAI(){
  enemies.forEach(e=>{
   let dist=e.position.distanceTo(camera.position);
   if(dist<60){
-    let dir=new THREE.Vector3().subVectors(camera.position,e.position).normalize();
-    e.position.add(dir.multiplyScalar(0.02));
-    e.cooldown--;
-    if(e.cooldown<=0){ 
-      // burst auto fire for AI
-      for(let i=0;i<3;i++) setTimeout(()=>enemyShoot(e),i*100);
-      e.cooldown=120; 
-    }
+   let dir=new THREE.Vector3().subVectors(camera.position,e.position).normalize();
+   e.position.add(dir.multiplyScalar(0.02));
+   e.cooldown--;
+   if(e.cooldown<=0){
+    for(let i=0;i<3;i++) setTimeout(()=>enemyShoot(e),i*120);
+    e.cooldown=120;
+   }
   }
  });
 }
@@ -202,56 +221,28 @@ function updateBullets(){
   b.position.add(b.vel);
 
   enemies.forEach(e=>{
-    if(b.position.distanceTo(e.position)<1){
-      e.hp--; explode(e.position);
-      if(e.hp<=0){ scene.remove(e); }
-    }
+   if(b.position.distanceTo(e.position)<1){
+    e.hp--;
+    if(e.hp<=0) scene.remove(e);
+   }
   });
 
   if(b.position.distanceTo(camera.position)<1){
-    document.getElementById('hp').textContent -=1;
+   let hpEl=document.getElementById('hp');
+   hpEl.textContent=parseInt(hpEl.textContent)-1;
   }
 
   if(--b.life<=0) scene.remove(b);
  });
 }
 
-// Explosions
-function explode(pos){
- let ex=new THREE.Mesh(new THREE.SphereGeometry(1),new THREE.MeshBasicMaterial({color:0xffaa00}));
- ex.position.copy(pos);
- scene.add(ex);
- setTimeout(()=>scene.remove(ex),200);
-}
-
-// Jet realistic physics (improved)
-let jet=new THREE.Mesh(new THREE.BoxGeometry(6,1,2),new THREE.MeshStandardMaterial({color:0xaaaaaa}));
-jet.position.set(0,20,0);
-jet.vel=new THREE.Vector3();
-scene.add(jet);
-
-function updateJet(){
- if(keys['i']) jet.vel.z-=0.02; // throttle
- if(keys['k']) jet.vel.z+=0.02;
- if(keys['j']) jet.rotation.y+=0.02;
- if(keys['l']) jet.rotation.y-=0.02;
-
- let forward=new THREE.Vector3(0,0,-1).applyEuler(jet.rotation);
- jet.vel.add(forward.multiplyScalar(0.01));
- jet.vel.y+=0.01; // lift
- jet.vel.y+=gravity;
- jet.position.add(jet.vel);
- jet.vel.multiplyScalar(0.99);
-}
-
 function animate(){
- handleAutoFire();
  requestAnimationFrame(animate);
+ handleFire();
  move();
  updateGun();
  updateAI();
  updateBullets();
- updateJet();
  renderer.render(scene,camera);
 }
 animate();

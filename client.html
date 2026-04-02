@@ -15,34 +15,55 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
-// Scene setup
+// Scene
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Light (morning sun feel)
+// Light (sun)
 const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(50, 100, 50);
+light.position.set(50,100,50);
 scene.add(light);
 
 // Ground
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(1000, 1000),
+  new THREE.PlaneGeometry(1000,1000),
   new THREE.MeshStandardMaterial({ color: 0x556655 })
 );
-ground.rotation.x = -Math.PI / 2;
+ground.rotation.x = -Math.PI/2;
 scene.add(ground);
 
+// Simple building (collision object)
+const building = new THREE.Mesh(
+  new THREE.BoxGeometry(10,10,10),
+  new THREE.MeshStandardMaterial({ color: 0x888888 })
+);
+building.position.set(0,5,-15);
+scene.add(building);
+
+const colliders = [building];
+
 // Player
+let health = 100;
 const player = {
   velocity: new THREE.Vector3(),
-  speed: 0.2,
   onGround: true
 };
 
-camera.position.set(0, 2, 5);
+camera.position.set(0,2,5);
+
+// Teams
+const team = "blue";
+
+// AI enemy
+const enemy = new THREE.Mesh(
+  new THREE.BoxGeometry(2,2,2),
+  new THREE.MeshStandardMaterial({ color: 0xff0000 })
+);
+enemy.position.set(0,1,-25);
+scene.add(enemy);
 
 // Controls
 const keys = {};
@@ -50,12 +71,8 @@ document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
 // Mouse look
-let yaw = 0;
-let pitch = 0;
-
-document.body.addEventListener("click", () => {
-  document.body.requestPointerLock();
-});
+let yaw = 0, pitch = 0;
+document.body.addEventListener("click", () => document.body.requestPointerLock());
 
 document.addEventListener("mousemove", e => {
   if (document.pointerLockElement === document.body) {
@@ -65,89 +82,150 @@ document.addEventListener("mousemove", e => {
   }
 });
 
-// Shooting
+// Weapons
+let guns = [
+  {name:"Rifle", damage:30, spread:0.02},
+  {name:"SMG", damage:20, spread:0.05},
+  {name:"Sniper", damage:80, spread:0.005}
+];
+
+let currentGun = 0;
+
+document.addEventListener("keydown", e => {
+  if (e.key.toLowerCase() === "y") {
+    currentGun = (currentGun + 1) % guns.length;
+    document.getElementById("gun").innerText = guns[currentGun].name;
+  }
+});
+
+// Fire mode toggle
+let fireMode = "auto";
+document.addEventListener("keydown", e => {
+  if (e.key.toLowerCase() === "f") {
+    fireMode = fireMode === "auto" ? "semi" : "auto";
+  }
+});
+
+// Bullets
 let bullets = [];
 
 function shoot() {
-  const bullet = {
-    position: camera.position.clone(),
-    direction: new THREE.Vector3(
-      -Math.sin(yaw),
-      0,
-      -Math.cos(yaw)
-    )
-  };
-  bullets.push(bullet);
-}
+  const gun = guns[currentGun];
 
-// Fire with E (auto)
-setInterval(() => {
-  if (keys['e']) shoot();
-}, 150);
-
-// Simple target
-const target = new THREE.Mesh(
-  new THREE.BoxGeometry(2,2,2),
-  new THREE.MeshStandardMaterial({ color: 0xff0000 })
-);
-target.position.set(0,1,-20);
-scene.add(target);
-
-// Movement loop
-function updatePlayer() {
-  let forward = new THREE.Vector3(
+  let dir = new THREE.Vector3(
     -Math.sin(yaw),
-    0,
+    -pitch,
     -Math.cos(yaw)
   );
 
-  let right = new THREE.Vector3(
-    -forward.z,
-    0,
-    forward.x
+  // spread
+  dir.x += (Math.random()-0.5)*gun.spread;
+  dir.y += (Math.random()-0.5)*gun.spread;
+
+  bullets.push({
+    pos: camera.position.clone(),
+    dir: dir.normalize(),
+    damage: gun.damage
+  });
+}
+
+// Automatic fire
+setInterval(() => {
+  if (keys['e']) shoot();
+}, 100);
+
+// AI shooting
+setInterval(() => {
+  let dir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
+  bullets.push({
+    pos: enemy.position.clone(),
+    dir: dir,
+    damage: 10,
+    fromEnemy: true
+  });
+}, 1000);
+
+// Rain
+let rainGeo = new THREE.BufferGeometry();
+let rainCount = 2000;
+let rainPos = [];
+
+for (let i=0;i<rainCount;i++){
+  rainPos.push(
+    (Math.random()-0.5)*200,
+    Math.random()*100,
+    (Math.random()-0.5)*200
   );
+}
 
-  if (keys['w']) player.velocity.add(forward.multiplyScalar(player.speed));
-  if (keys['s']) player.velocity.add(forward.multiplyScalar(-player.speed));
-  if (keys['a']) player.velocity.add(right.multiplyScalar(-player.speed));
-  if (keys['d']) player.velocity.add(right.multiplyScalar(player.speed));
+rainGeo.setAttribute("position", new THREE.Float32BufferAttribute(rainPos,3));
 
-  // gravity
-  if (!player.onGround) player.velocity.y -= 0.01;
+let rain = new THREE.Points(
+  rainGeo,
+  new THREE.PointsMaterial({ size:0.2 })
+);
 
-  camera.position.add(player.velocity);
-  player.velocity.multiplyScalar(0.9);
+scene.add(rain);
 
-  // jump
-  if (keys[' '] && player.onGround) {
+// Movement
+const speed = 0.2;
+
+function updatePlayer() {
+  let forward = new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+  let right = new THREE.Vector3(-forward.z,0,forward.x);
+
+  if(keys['w']) player.velocity.add(forward.clone().multiplyScalar(speed));
+  if(keys['s']) player.velocity.add(forward.clone().multiplyScalar(-speed));
+  if(keys['a']) player.velocity.add(right.clone().multiplyScalar(-speed));
+  if(keys['d']) player.velocity.add(right.clone().multiplyScalar(speed));
+
+  if(keys[' '] && player.onGround){
     player.velocity.y = 0.2;
     player.onGround = false;
   }
 
-  if (camera.position.y <= 2) {
+  player.velocity.y -= 0.01;
+
+  camera.position.add(player.velocity);
+  player.velocity.multiplyScalar(0.9);
+
+  if(camera.position.y <= 2){
     camera.position.y = 2;
     player.onGround = true;
   }
-}
 
-// Update bullets
-function updateBullets() {
-  bullets.forEach(b => {
-    b.position.add(b.direction.clone().multiplyScalar(0.5));
-
-    // hit detection
-    if (b.position.distanceTo(target.position) < 2) {
-      scene.remove(target);
+  // simple building collision
+  colliders.forEach(c=>{
+    if(camera.position.distanceTo(c.position) < 6){
+      camera.position.sub(player.velocity);
     }
   });
 }
 
-// Mouse look apply
+// Bullets update
+function updateBullets() {
+  bullets.forEach(b => {
+    b.pos.add(b.dir.clone().multiplyScalar(0.8));
+
+    // hit player
+    if (!b.fromEnemy && b.pos.distanceTo(enemy.position) < 2) {
+      scene.remove(enemy);
+    }
+
+    // hit player by enemy
+    if (b.fromEnemy && b.pos.distanceTo(camera.position) < 1.5) {
+      health -= b.damage;
+      document.getElementById("health").innerText = "Health: " + health;
+    }
+  });
+}
+
+// Camera
 function updateCamera() {
   camera.rotation.set(pitch, yaw, 0);
 }
 
-// Render loop
+// Loop
 function animate() {
   requestAnimationFrame(animate);
 
